@@ -6,6 +6,12 @@
 
 const jwt = require('jsonwebtoken')
 const fs = require('fs')
+const uuidv4 = require('uuid/v4')
+
+const stats = require('./stats')
+const hostWithProxy = require('./util').hostWithProxy
+
+const privateKey = fs.readFileSync(privateKeyPath())
 
 function verifyAuth (authorization) {
   return getPublicKey().then(function (pubKeyContents) {
@@ -63,7 +69,7 @@ function verifyAuth (authorization) {
 function getPublicKey () {
   return new Promise(function (resolve, reject) {
     fs.readFile(publicKeyPath(), 'utf8', function (err, data) {
-      if (err != undefined) {
+      if (err !== undefined) {
         reject(err)
       } else {
         resolve(data)
@@ -80,6 +86,84 @@ function privateKeyPath () {
   return './static/private.pem'
 }
 
+const clientId = 'HeroCard_Template1@be384045-9ea9-4dac-90d4-bd92367f99ab'
+const clientSecret = 'yaioJWzOTbKGfyXj5ZeHsQiytN85nRnIHrHFsQNg0QsFWCU6'
+/**
+ * Perform device registration against vIDM
+ * @param  {} '/SAAS/auth/device/register'
+ * @param  {} function(req
+ * @param  {} res
+ */
+function deviceRegistration (req, res) {
+  // const redirect_uri = req.query.redirect_uri
+  // const scope = req.query.scope
+  // const device_name = req.query.device_name
+  const state = req.query.state
+  // const response_type = req.query.response_type
+  // const app_product_id = req.query.app_product_id
+  // const type = req.query.type
+  // const user_device = req.query.user_device
+
+  const scheme = 'com.airwatch.herocard'
+  const code = 'xO1MqR4XBw5z1GbZTnyG4olFjLBVal8j'
+  const activationCode = 'eyJvdGEiOiIzMzkzMzY6eGZ0N1RtZ1FPSTZQZGhZNGlhd3hZVjVvMHZtU2YzRmoiLCJ1cmwiOiJodHRwczovL2V1Yy52aWRtcHJldmlldy5jb20vIiwidGlkIjoiZXVjIn0'
+  const userstore = 'Userstore_6cbd9d69-a38b-441d-854e-12ea6c4215f9'
+
+  res.redirect(`${scheme}://success?code=${code}&activation_code=${activationCode}=&state=${state}&userstore=${userstore}`)
+}
+/**
+ * Device activation in vIDM
+ * @param  {} req
+ * @param  {} res
+ */
+function deviceActivation (req, res) {
+  // /SAAS/API/1.0/REST/oauth2/activate
+  // expect {
+  res.status(200).json({ client_id: clientId, client_secret: clientSecret })
+}
+
+/**
+ * Retrieve a JWT for use with this mock vIDM
+ *
+ * @param  {} '/SAAS/auth/oauthtoken'
+ * @param  {} function(req,res)
+ */
+function userAuthToken (req, res) {
+  const user = req.body.user || 'genericuser'
+  const tenant = req.body.tenant || 'vmware'
+  const domain = req.body.domain || 'VMWARE'
+  const protocol = req.body.protocol || req.protocol
+  const hostname = hostWithProxy(req)
+  const host = `${protocol}://${hostname}`
+  const issuer = `${host}/SAAS/auth`
+  const email = req.body.email || `${user}@${domain}`
+  const audience = `${host}/auth/oauthtoken`
+  const expires = req.body.expires || '7d'
+
+  const payload = {
+    jti: uuidv4(),
+    prn: `${user}@${tenant}`,
+    domain: domain,
+    eml: email,
+    iss: issuer
+  }
+  const jwtOptions = {
+    algorithm: 'RS256',
+    expiresIn: expires,
+    'audience': audience,
+    subject: user
+  }
+
+  const token = jwt.sign(payload, privateKey, jwtOptions)
+  stats.addStat(stats.NotificationTypes.token_request, 200)
+  res.status(200).json({
+    'token': token
+  })
+}
+
 exports.verifyAuth = verifyAuth
 exports.publicKeyPath = publicKeyPath
 exports.privateKeyPath = privateKeyPath
+exports.deviceRegistration = deviceRegistration
+exports.deviceActivation = deviceActivation
+exports.userAuthToken = userAuthToken

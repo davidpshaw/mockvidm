@@ -8,16 +8,13 @@ const express = require('express')
 const fs = require('fs')
 const path = require('path')
 const bodyParser = require('body-parser')
-const jwt = require('jsonwebtoken')
-const uuidv4 = require('uuid/v4')
+
 const vidm = require('./common/vidm')
 const logging = require('./common/logging')
-const hostWithProxy = require('./common/util').hostWithProxy
 const stats = require('./common/stats')
 
 var app = express()
 app.set('trust proxy', true)
-const privateKey = fs.readFileSync(vidm.privateKeyPath())
 
 // accept and parse JSON POST bodies
 app.use(bodyParser.json())
@@ -151,49 +148,32 @@ app.delete('/stats', function (req, res) {
 })
 
 /**
+ * Perform device registration against vIDM
+ * @param  {} '/SAAS/auth/device/register'
+ * @param  {} function(req
+ * @param  {} res
+ */
+app.get('/SAAS/auth/device/register', function (req, res) {
+  vidm.deviceRegistration(req, res)
+})
+
+/**
+ * Device activation in vIDM
+ * @param  {} req
+ * @param  {} res
+ */
+app.post('/SAAS/API/1.0/REST/oauth2/activate', function (req, res) {
+  vidm.deviceActivation(req, res)
+})
+
+/**
  * Retrieve a JWT for use with this mock vIDM
  *
  * @param  {} '/SAAS/auth/oauthtoken'
  * @param  {} function(req,res)
  */
 app.post('/SAAS/auth/oauthtoken', function (req, res) {
-  const user = req.body.user
-  const tenant = req.body.tenant || 'vmware'
-  const domain = req.body.domain
-  const protocol = req.body.protocol || req.protocol
-  const hostname = hostWithProxy(req)
-  const host = `${protocol}://${hostname}`
-  const issuer = `${host}/SAAS/auth`
-  const email = req.body.email || `${user}@${domain}`
-  const audience = `${host}/auth/oauthtoken`
-  const expires = req.body.expires || '7d'
-
-  if (user === undefined || domain === undefined) {
-    stats.addStat(stats.NotificationTypes.token_request, 400)
-    res.status(400).json({
-      'error': 'user and domain are required'
-    })
-  } else {
-    const payload = {
-      jti: uuidv4(),
-      prn: `${user}@${tenant}`,
-      domain: domain,
-      eml: email,
-      iss: issuer
-    }
-    const jwtOptions = {
-      algorithm: 'RS256',
-      expiresIn: expires,
-      'audience': audience,
-      subject: user
-    }
-
-    const token = jwt.sign(payload, privateKey, jwtOptions)
-    stats.addStat(stats.NotificationTypes.token_request, 200)
-    res.status(200).json({
-      'token': token
-    })
-  }
+  vidm.userAuthToken(req, res)
 })
 
 app.listen(8080)
